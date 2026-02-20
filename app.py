@@ -38,11 +38,22 @@ def analyze(symbol):
         elif price < sma20 and price < sma50:
             trend = "🐻 НИСХОДЯЩИЙ"
             
-        # Новости
+        # Новости (с защитой от ошибок Yahoo)
         news_list = []
-        if ticker.news:
-            for n in ticker.news[:3]:
-                news_list.append(n.get('title', ''))
+        try:
+            if ticker.news:
+                for n in ticker.news[:3]:
+                    # Ищем заголовок в новом формате (content) или откатываемся к старому (title)
+                    title = n.get('content', {}).get('title') or n.get('title')
+                    if title:
+                        news_list.append(title)
+            
+            # Если новости так и не нашлись, но список пуст
+            if not news_list:
+                news_list = ["Свежих новостей по активу не найдено."]
+        except Exception:
+            # Защита от непредвиденных изменений API или блокировок
+            news_list = ["Новости временно недоступны (ошибка источника)."]
                 
         return {
             "symbol": symbol,
@@ -51,7 +62,8 @@ def analyze(symbol):
             "trend": trend,
             "news": news_list
         }
-    except:
+    except Exception as e:
+        # Общая ошибка анализа
         return None
 
 # --- ИНТЕРФЕЙС ПРИЛОЖЕНИЯ ---
@@ -85,7 +97,10 @@ if st.button("АНАЛИЗИРОВАТЬ 🔥"):
                 
             st.divider()
             st.subheader("💡 Скопируй в ИИ:")
-            prompt = f"Анализ {data['symbol']}. Цена: {data['price']:.4f}. RSI: {data['rsi']:.1f}. Тренд: {data['trend']}. Новости: {data['news']}. Дай прогноз."
+            
+            # Формируем красивую строку с новостями для промпта
+            news_str = "; ".join(data['news'])
+            prompt = f"Анализ {data['symbol']}. Цена: {data['price']:.4f}. RSI: {data['rsi']:.1f}. Тренд: {data['trend']}. Новости: {news_str}. Дай прогноз."
             st.code(prompt, language="text")
             
         else:
