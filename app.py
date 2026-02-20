@@ -24,19 +24,32 @@ def analyze(symbol):
         df.ta.rsi(length=14, append=True)
         df.ta.sma(length=20, append=True)
         df.ta.sma(length=50, append=True)
+        df.ta.atr(length=14, append=True) # Добавили ATR для расчета стопов
         
         current = df.iloc[-1]
         
-        # Логика тренда
+        # Логика тренда и расчет уровней
         price = current['Close']
         sma20 = current['SMA_20']
         sma50 = current['SMA_50']
+        atr = current['ATRr_14'] # Получаем текущую волатильность
         
         trend = "➡️ БОКОВИК"
+        signal = "⏳ ЖДАТЬ"
+        stop_loss = 0
+        take_profit = 0
+        
         if price > sma20 and price > sma50:
             trend = "🚀 ВОСХОДЯЩИЙ"
+            signal = "🟢 ПОКУПАТЬ (LONG)"
+            stop_loss = price - (atr * 1.5) # Стоп ниже цены на 1.5 ATR
+            take_profit = price + (atr * 3.0) # Тейк в 2 раза больше стопа (риск 1:2)
+            
         elif price < sma20 and price < sma50:
             trend = "🐻 НИСХОДЯЩИЙ"
+            signal = "🔴 ПРОДАВАТЬ (SHORT)"
+            stop_loss = price + (atr * 1.5) # Стоп выше цены на 1.5 ATR
+            take_profit = price - (atr * 3.0) # Тейк ниже цены
             
         # Новости (с защитой от ошибок Yahoo)
         news_list = []
@@ -60,7 +73,10 @@ def analyze(symbol):
             "price": price,
             "rsi": current['RSI_14'],
             "trend": trend,
-            "news": news_list
+            "news": news_list,
+            "signal": signal,
+            "stop_loss": stop_loss,
+            "take_profit": take_profit
         }
     except Exception as e:
         # Общая ошибка анализа
@@ -91,6 +107,21 @@ if st.button("АНАЛИЗИРОВАТЬ 🔥"):
                 
             st.write(f"**Тренд:** {data['trend']}")
             
+            # --- НОВЫЙ БЛОК: ТОРГОВЫЙ ПЛАН ---
+            st.divider()
+            st.subheader("🎯 Торговый план (по ATR):")
+            
+            if data['trend'] != "➡️ БОКОВИК":
+                st.info(f"**Действие:** {data['signal']}")
+                st.write(f"**📍 Точка входа:** Текущая цена (~ ${data['price']:.4f})")
+                st.write(f"**🛡️ Стоп-лосс (SL):** ${data['stop_loss']:.4f}")
+                st.write(f"**💰 Тейк-профит (TP):** ${data['take_profit']:.4f}")
+                st.caption("Соотношение Риск/Прибыль = 1:2")
+            else:
+                st.warning("Рынок во флэте (боковик). Идеальной точки входа сейчас нет, лучше подождать.")
+            # ---------------------------------
+            
+            st.divider()
             st.subheader("📰 Новости:")
             for n in data['news']:
                 st.write(f"- {n}")
