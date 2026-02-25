@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
+from deep_translator import GoogleTranslator # 👈 НОВАЯ СТРОКА: Импортируем переводчик
 
 # --- НАСТРОЙКИ СТРАНИЦЫ ---
 st.set_page_config(page_title="Crypto & Gold Analyst", page_icon="📈", layout="centered")
@@ -24,47 +25,39 @@ def analyze(symbol):
         df.ta.rsi(length=14, append=True)
         df.ta.sma(length=20, append=True)
         df.ta.sma(length=50, append=True)
-        df.ta.atr(length=14, append=True) # Добавили ATR для расчета стопов
         
         current = df.iloc[-1]
         
-        # Логика тренда и расчет уровней
+        # Логика тренда
         price = current['Close']
         sma20 = current['SMA_20']
         sma50 = current['SMA_50']
-        atr = current['ATRr_14'] # Получаем текущую волатильность
         
         trend = "➡️ БОКОВИК"
-        signal = "⏳ ЖДАТЬ"
-        stop_loss = 0
-        take_profit = 0
-        
         if price > sma20 and price > sma50:
             trend = "🚀 ВОСХОДЯЩИЙ"
-            signal = "🟢 ПОКУПАТЬ (LONG)"
-            stop_loss = price - (atr * 1.5) # Стоп ниже цены на 1.5 ATR
-            take_profit = price + (atr * 3.0) # Тейк в 2 раза больше стопа (риск 1:2)
-            
         elif price < sma20 and price < sma50:
             trend = "🐻 НИСХОДЯЩИЙ"
-            signal = "🔴 ПРОДАВАТЬ (SHORT)"
-            stop_loss = price + (atr * 1.5) # Стоп выше цены на 1.5 ATR
-            take_profit = price - (atr * 3.0) # Тейк ниже цены
             
         # Новости (с защитой от ошибок Yahoo)
         news_list = []
         try:
             if ticker.news:
+                # 👈 ИНИЦИАЛИЗИРУЕМ ПЕРЕВОДЧИК
+                translator = GoogleTranslator(source='auto', target='ru')
+                
                 for n in ticker.news[:3]:
                     # Ищем заголовок в новом формате (content) или откатываемся к старому (title)
                     title = n.get('content', {}).get('title') or n.get('title')
                     if title:
-                        news_list.append(title)
+                        # 👈 ПЕРЕВОДИМ ЗАГОЛОВОК
+                        translated_title = translator.translate(title)
+                        news_list.append(translated_title)
             
             # Если новости так и не нашлись, но список пуст
             if not news_list:
                 news_list = ["Свежих новостей по активу не найдено."]
-        except Exception:
+        except Exception as e:
             # Защита от непредвиденных изменений API или блокировок
             news_list = ["Новости временно недоступны (ошибка источника)."]
                 
@@ -73,10 +66,7 @@ def analyze(symbol):
             "price": price,
             "rsi": current['RSI_14'],
             "trend": trend,
-            "news": news_list,
-            "signal": signal,
-            "stop_loss": stop_loss,
-            "take_profit": take_profit
+            "news": news_list
         }
     except Exception as e:
         # Общая ошибка анализа
@@ -89,7 +79,7 @@ st.write("Введите тикер (например: BTC-USD, GOLD, EURUSD)")
 symbol = st.text_input("Тикер актива:", value="GBPUSD=X").upper()
 
 if st.button("АНАЛИЗИРОВАТЬ 🔥"):
-    with st.spinner('Сканирую рынок...'):
+    with st.spinner('Сканирую рынок и перевожу новости...'): # 👈 Изменил текст загрузки
         data = analyze(symbol)
         
         if data:
@@ -107,21 +97,6 @@ if st.button("АНАЛИЗИРОВАТЬ 🔥"):
                 
             st.write(f"**Тренд:** {data['trend']}")
             
-            # --- НОВЫЙ БЛОК: ТОРГОВЫЙ ПЛАН ---
-            st.divider()
-            st.subheader("🎯 Торговый план (по ATR):")
-            
-            if data['trend'] != "➡️ БОКОВИК":
-                st.info(f"**Действие:** {data['signal']}")
-                st.write(f"**📍 Точка входа:** Текущая цена (~ ${data['price']:.4f})")
-                st.write(f"**🛡️ Стоп-лосс (SL):** ${data['stop_loss']:.4f}")
-                st.write(f"**💰 Тейк-профит (TP):** ${data['take_profit']:.4f}")
-                st.caption("Соотношение Риск/Прибыль = 1:2")
-            else:
-                st.warning("Рынок во флэте (боковик). Идеальной точки входа сейчас нет, лучше подождать.")
-            # ---------------------------------
-            
-            st.divider()
             st.subheader("📰 Новости:")
             for n in data['news']:
                 st.write(f"- {n}")
