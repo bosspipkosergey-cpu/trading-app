@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Математический предсказатель</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Небольшая стилизация для холста, чтобы он выглядел как миллиметровка */
+        canvas {
+            background-color: #f8fafc;
+            background-image: 
+                linear-gradient(#e2e8f0 1px, transparent 1px),
+                linear-gradient(90deg, #e2e8f0 1px, transparent 1px);
+            background-size: 20px 20px;
+            cursor: crosshair;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans p-4 md:p-8 min-h-screen flex flex-col items-center">
+
+    <div class="max-w-4xl w-full bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div class="bg-blue-600 p-6 text-white">
+            <h1 class="text-2xl font-bold mb-2">Линейная регрессия: Предсказание будущего</h1>
+            <p class="text-blue-100 text-sm">
+                Кликайте по сетке, чтобы добавить данные (например, зависимость цены от времени). 
+                Математика автоматически рассчитает линию тренда и предскажет будущие значения.
+            </p>
+        </div>
+
+        <div class="p-6 flex flex-col md:flex-row gap-6">
+            <!-- Графическая область -->
+            <div class="flex-1">
+                <div class="border-2 border-gray-300 rounded-lg overflow-hidden relative">
+                    <canvas id="graphCanvas" width="600" height="400" class="w-full h-auto touch-none"></canvas>
+                </div>
+                <div class="flex justify-between mt-4">
+                    <button id="clearBtn" class="px-4 py-2 bg-red-100 text-red-600 font-semibold rounded hover:bg-red-200 transition">
+                        Очистить график
+                    </button>
+                    <button id="exampleBtn" class="px-4 py-2 bg-blue-100 text-blue-600 font-semibold rounded hover:bg-blue-200 transition">
+                        Загрузить пример
+                    </button>
+                    <!-- Новая кнопка для загрузки реальных данных -->
+                    <input type="file" id="csvInput" accept=".csv,.txt" class="hidden">
+                    <button id="uploadCsvBtn" class="px-4 py-2 bg-green-100 text-green-600 font-semibold rounded hover:bg-green-200 transition shadow-sm">
+                        Загрузить CSV
+                    </button>
+                </div>
+            </div>
+
+            <!-- Информационная панель (Математика) -->
+            <div class="w-full md:w-1/3 bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col">
+                <h2 class="font-bold text-lg border-b pb-2 mb-4">Математика под капотом</h2>
+                
+                <div id="stats" class="text-sm space-y-3 flex-1">
+                    <p class="text-gray-500 italic">Добавьте хотя бы 2 точки на график, чтобы система смогла сделать предсказание.</p>
+                </div>
+
+                <div class="mt-4 pt-4 border-t border-gray-200">
+                    <h3 class="font-bold text-sm text-gray-600 mb-2">Формула предсказания:</h3>
+                    <div class="bg-white p-3 rounded border font-mono text-center text-sm" id="formula">
+                        y = mx + b
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('graphCanvas');
+        const ctx = canvas.getContext('2d');
+        const statsDiv = document.getElementById('stats');
+        const formulaDiv = document.getElementById('formula');
+        
+        // Массив для хранения точек, которые вводит пользователь
+        let points = [];
+
+        // Адаптация координат (чтобы (0,0) было в левом нижнем углу)
+        function getMousePos(evt) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: (evt.clientX - rect.left) * scaleX,
+                // Инвертируем Y, чтобы график рос снизу вверх
+                y: canvas.height - ((evt.clientY - rect.top) * scaleY)
+            };
+        }
+
+        // Добавление точки по клику
+        canvas.addEventListener('mousedown', (evt) => {
+            const pos = getMousePos(evt);
+            points.push(pos);
+            update();
+        });
+
+        // Добавление поддержки касаний для мобильных
+        canvas.addEventListener('touchstart', (evt) => {
+            evt.preventDefault();
+            const touch = evt.touches[0];
+            const pos = getMousePos({ clientX: touch.clientX, clientY: touch.clientY });
+            points.push(pos);
+            update();
+        });
+
+        // Математическая магия: Метод наименьших квадратов
+        // Находит идеальную прямую y = mx + b
+        function calculateLinearRegression() {
+            const n = points.length;
+            if (n < 2) return null;
+
+            let sumX = 0;
+            let sumY = 0;
+            let sumXY = 0;
+            let sumXX = 0;
+
+            for (let i = 0; i < n; i++) {
+                sumX += points[i].x;
+                sumY += points[i].y;
+                sumXY += points[i].x * points[i].y;
+                sumXX += points[i].x * points[i].x;
+            }
+
+            // Вычисляем наклон линии (m)
+            const denominator = (n * sumXX - sumX * sumX);
+            if (denominator === 0) return null; // Защита от деления на ноль (вертикальная линия)
+            
+            const m = (n * sumXY - sumX * sumY) / denominator;
+            
+            // Вычисляем смещение (b)
+            const b = (sumY - m * sumX) / n;
+
+            return { m, b };
+        }
+
+        function drawGraph(regression) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Рисуем оси
+            ctx.beginPath();
+            ctx.strokeStyle = '#94a3b8';
+            ctx.lineWidth = 2;
+            ctx.moveTo(0, canvas.height);
+            ctx.lineTo(canvas.width, canvas.height);
+            ctx.moveTo(0, canvas.height);
+            ctx.lineTo(0, 0);
+            ctx.stroke();
+
+            // Если есть регрессия (предсказание), рисуем линию тренда
+            if (regression) {
+                ctx.beginPath();
+                ctx.strokeStyle = '#2563eb'; // Синий цвет линии
+                ctx.lineWidth = 3;
+                
+                // Рисуем от левого края (x=0) до правого края холста (x=width)
+                const startX = 0;
+                const startY = canvas.height - (regression.m * startX + regression.b);
+                
+                const endX = canvas.width;
+                const endY = canvas.height - (regression.m * endX + regression.b);
+
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(endX, endY);
+                ctx.stroke();
+
+                // Рисуем зону "Будущего предсказания" (последняя треть графика)
+                ctx.fillStyle = 'rgba(37, 99, 235, 0.1)';
+                ctx.fillRect(canvas.width * 0.7, 0, canvas.width * 0.3, canvas.height);
+                
+                ctx.fillStyle = '#2563eb';
+                ctx.font = '14px Arial';
+                ctx.fillText('Зона предсказания', canvas.width * 0.7 + 10, 20);
+            }
+
+            // Рисуем сами точки (данные)
+            ctx.fillStyle = '#ef4444'; // Красный цвет
+            for (let i = 0; i < points.length; i++) {
+                ctx.beginPath();
+                ctx.arc(points[i].x, canvas.height - points[i].y, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+
+        function updatePanel(regression) {
+            if (points.length === 0) {
+                statsDiv.innerHTML = '<p class="text-gray-500 italic">График пуст. Кликните, чтобы добавить данные.</p>';
+                formulaDiv.innerHTML = 'y = mx + b';
+                return;
+            }
+            if (points.length === 1) {
+                statsDiv.innerHTML = `<p>Точек: 1</p><p class="text-gray-500 italic mt-2">Нужна еще хотя бы 1 точка для расчета тренда.</p>`;
+                formulaDiv.innerHTML = 'y = mx + b';
+                return;
+            }
+
+            if (regression) {
+                const mStr = regression.m.toFixed(2);
+                const bStr = regression.b.toFixed(2);
+                
+                // Делаем предсказание для значения X в самом конце графика
+                const futureX = canvas.width * 0.9;
+                const predictedY = regression.m * futureX + regression.b;
+
+                let displayPrediction = Math.round(predictedY);
+                let predictionLabel = "ожидаемое значение Y будет около";
+                
+                // Если данные загружены из реального файла, конвертируем пиксели графика обратно в цену
+                if (canvas.dataset.hasRealData === "true") {
+                    const minPrice = parseFloat(canvas.dataset.minPrice);
+                    const maxPrice = parseFloat(canvas.dataset.maxPrice);
+                    const priceRange = maxPrice - minPrice;
+                    const paddingY = 40;
+                    const usableHeight = canvas.height - paddingY * 2;
+                    
+                    const normalizedY = (predictedY - paddingY) / usableHeight;
+                    const realPredictedPrice = minPrice + (normalizedY * priceRange);
+                    
+                    displayPrediction = realPredictedPrice.toFixed(4); // Выводим с точностью до 4 знаков
+                    predictionLabel = "прогнозируемая цена будет около";
+                }
+
+                statsDiv.innerHTML = `
+                    <div class="mb-2"><span class="font-semibold text-gray-700">Точек данных:</span> ${points.length}</div>
+                    <div class="mb-2"><span class="font-semibold text-gray-700">Тенденция:</span> 
+                        ${regression.m > 0 ? '<span class="text-green-600 font-bold">↑ Растущая</span>' : '<span class="text-red-600 font-bold">↓ Падающая</span>'}
+                    </div>
+                    <div class="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                        <span class="font-semibold text-blue-800 block mb-1">Предсказание:</span>
+                        Если текущий тренд сохранится, <br>${predictionLabel} <span class="font-bold text-blue-600">${displayPrediction}</span>.
+                    </div>
+                `;
+                formulaDiv.innerHTML = `y = ${mStr}x ${regression.b >= 0 ? '+' : '-'} ${Math.abs(bStr)}`;
+            }
+        }
+
+        function update() {
+            const regression = calculateLinearRegression();
+            drawGraph(regression);
+            updatePanel(regression);
+        }
+
+        // Кнопки
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            points = [];
+            canvas.dataset.hasRealData = "false";
+            update();
+        });
+
+        document.getElementById('exampleBtn').addEventListener('click', () => {
+            points = [];
+            canvas.dataset.hasRealData = "false";
+            // Генерируем точки с небольшим разбросом (шумом) вокруг растущего тренда
+            for(let i = 50; i < 400; i += 40) {
+                points.push({
+                    x: i + (Math.random() * 20 - 10), 
+                    y: (i * 0.5) + 50 + (Math.random() * 60 - 30) // Базовый тренд y = 0.5x + 50
+                });
+            }
+            update();
+        });
+
+        // --- НОВАЯ ЛОГИКА ЗАГРУЗКИ И ПАРСИНГА CSV ---
+        const csvInput = document.getElementById('csvInput');
+        document.getElementById('uploadCsvBtn').addEventListener('click', () => {
+            csvInput.click(); // Эмулируем клик по скрытому инпуту
+        });
+
+        csvInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const text = event.target.result;
+                const lines = text.trim().split('\n');
+                
+                let rawPrices = [];
+                
+                // Анализируем первую строку (заголовки), чтобы найти нужную колонку с ценой
+                const headers = lines[0].split(/[,;]/).map(h => h.toLowerCase());
+                let closeIndex = headers.length - 1; // По умолчанию берем последнюю
+                
+                for (let j = 0; j < headers.length; j++) {
+                    // Ищем колонку цены закрытия по ключевым словам
+                    if (headers[j].includes('close') || headers[j].includes('закрытие')) {
+                        closeIndex = j;
+                        break;
+                    }
+                }
+                
+                // Если явно не нашли, но структура похожа на стандартную биржевую (6 колонок)
+                if (closeIndex === headers.length - 1 && headers.length >= 6) {
+                    closeIndex = 4; // Индекс колонки Close обычно равен 4
+                }
+
+                for(let i = 0; i < lines.length; i++) {
+                    if(!lines[i].trim()) continue;
+                    
+                    const parts = lines[i].split(/[,;]/);
+                    if(parts.length <= closeIndex) continue;
+                    
+                    // Берем значение из найденной колонки цены
+                    const targetPart = parts[closeIndex].trim().replace(',', '.');
+                    const val = parseFloat(targetPart);
+                    
+                    // isNaN отфильтрует саму строку с заголовками, оставив только числа
+                    if (!isNaN(val)) {
+                        rawPrices.push(val);
+                    }
+                }
+
+                if(rawPrices.length < 2) {
+                    alert('Не удалось прочитать цены. Убедитесь, что это текстовый файл, где числа разделены запятыми.');
+                    return;
+                }
+
+                // Масштабируем реальные цены (от 1.05 до 1.08 или от 40000 до 60000) под пиксели холста
+                points = [];
+                const minPrice = Math.min(...rawPrices);
+                const maxPrice = Math.max(...rawPrices);
+                const priceRange = (maxPrice - minPrice) || 1;
+
+                const paddingX = 20;
+                const paddingY = 40;
+                const usableWidth = canvas.width * 0.7 - paddingX * 2; 
+                const usableHeight = canvas.height - paddingY * 2;
+
+                for(let i = 0; i < rawPrices.length; i++) {
+                    const x = paddingX + (i / (rawPrices.length - 1)) * usableWidth;
+                    const normalizedY = (rawPrices[i] - minPrice) / priceRange;
+                    const y = paddingY + normalizedY * usableHeight; 
+                    
+                    points.push({ x: x, y: y });
+                }
+                
+                // Сохраняем минимальную и максимальную цену в память, чтобы потом 
+                // формула предсказания могла выдать вам настоящие доллары (или рубли), а не пиксели
+                canvas.dataset.minPrice = minPrice;
+                canvas.dataset.maxPrice = maxPrice;
+                canvas.dataset.hasRealData = "true";
+
+                update();
+            };
+            
+            reader.readAsText(file);
+            e.target.value = ''; // Сбрасываем выбор файла
+        });
+
+        // Инициализация пустого графика
+        update();
+
+    </script>
+</body>
+</html>
