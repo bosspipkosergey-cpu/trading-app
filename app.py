@@ -2,12 +2,13 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
-from deep_translator import GoogleTranslator # 👈 НОВАЯ СТРОКА: Импортируем переводчик
+from deep_translator import GoogleTranslator
+import streamlit.components.v1 as components # 👈 ИМПОРТИРУЕМ КОМПОНЕНТ ДЛЯ HTML
 
 # --- НАСТРОЙКИ СТРАНИЦЫ ---
 st.set_page_config(page_title="Crypto & Gold Analyst", page_icon="📈", layout="centered")
 
-# --- ФУНКЦИЯ АНАЛИЗА ---
+# --- ФУНКЦИЯ АНАЛИЗА (Ваша оригинальная логика) ---
 def analyze(symbol):
     try:
         # Корректировка тикеров для удобства
@@ -43,22 +44,17 @@ def analyze(symbol):
         news_list = []
         try:
             if ticker.news:
-                # 👈 ИНИЦИАЛИЗИРУЕМ ПЕРЕВОДЧИК
                 translator = GoogleTranslator(source='auto', target='ru')
                 
                 for n in ticker.news[:3]:
-                    # Ищем заголовок в новом формате (content) или откатываемся к старому (title)
                     title = n.get('content', {}).get('title') or n.get('title')
                     if title:
-                        # 👈 ПЕРЕВОДИМ ЗАГОЛОВОК
                         translated_title = translator.translate(title)
                         news_list.append(translated_title)
             
-            # Если новости так и не нашлись, но список пуст
             if not news_list:
                 news_list = ["Свежих новостей по активу не найдено."]
         except Exception as e:
-            # Защита от непредвиденных изменений API или блокировок
             news_list = ["Новости временно недоступны (ошибка источника)."]
                 
         return {
@@ -69,45 +65,66 @@ def analyze(symbol):
             "news": news_list
         }
     except Exception as e:
-        # Общая ошибка анализа
         return None
 
-# --- ИНТЕРФЕЙС ПРИЛОЖЕНИЯ ---
-st.title("🤖 Карманный Аналитик")
-st.write("Введите тикер (например: BTC-USD, GOLD, EURUSD)")
+# --- БОКОВОЕ МЕНЮ (НАВИГАЦИЯ) ---
+st.sidebar.title("Меню инструментов")
+page = st.sidebar.radio(
+    "Выберите приложение:", 
+    ["Карманный Аналитик", "Математический предсказатель"]
+)
 
-symbol = st.text_input("Тикер актива:", value="GBPUSD=X").upper()
+# --- МАРШРУТИЗАЦИЯ СТРАНИЦ ---
 
-if st.button("АНАЛИЗИРОВАТЬ 🔥"):
-    with st.spinner('Сканирую рынок и перевожу новости...'): # 👈 Изменил текст загрузки
-        data = analyze(symbol)
-        
-        if data:
-            # Красивые метрики
-            st.metric(label="Цена", value=f"${data['price']:.4f}")
+if page == "Карманный Аналитик":
+    # === ВАШЕ ОРИГИНАЛЬНОЕ ПРИЛОЖЕНИЕ ===
+    st.title("🤖 Карманный Аналитик")
+    st.write("Введите тикер (например: BTC-USD, GOLD, EURUSD)")
+
+    symbol = st.text_input("Тикер актива:", value="GBPUSD=X").upper()
+
+    if st.button("АНАЛИЗИРОВАТЬ 🔥"):
+        with st.spinner('Сканирую рынок и перевожу новости...'):
+            data = analyze(symbol)
             
-            # Цветной RSI
-            rsi = data['rsi']
-            if rsi > 70: 
-                st.error(f"RSI: {rsi:.1f} (ПЕРЕГРЕВ!)")
-            elif rsi < 30:
-                st.success(f"RSI: {rsi:.1f} (ПЕРЕПРОДАН - СКИДКИ!)")
+            if data:
+                st.metric(label="Цена", value=f"${data['price']:.4f}")
+                
+                rsi = data['rsi']
+                if rsi > 70: 
+                    st.error(f"RSI: {rsi:.1f} (ПЕРЕГРЕВ!)")
+                elif rsi < 30:
+                    st.success(f"RSI: {rsi:.1f} (ПЕРЕПРОДАН - СКИДКИ!)")
+                else:
+                    st.info(f"RSI: {rsi:.1f} (Норма)")
+                    
+                st.write(f"**Тренд:** {data['trend']}")
+                
+                st.subheader("📰 Новости:")
+                for n in data['news']:
+                    st.write(f"- {n}")
+                    
+                st.divider()
+                st.subheader("💡 Скопируй в ИИ:")
+                
+                news_str = "; ".join(data['news'])
+                prompt = f"Анализ {data['symbol']}. Цена: {data['price']:.4f}. RSI: {data['rsi']:.1f}. Тренд: {data['trend']}. Новости: {news_str}. Дай прогноз."
+                st.code(prompt, language="text")
+                
             else:
-                st.info(f"RSI: {rsi:.1f} (Норма)")
-                
-            st.write(f"**Тренд:** {data['trend']}")
+                st.error("Ошибка! Проверь тикер или интернет.")
+
+elif page == "Математический предсказатель":
+    # === НОВОЕ ПРИЛОЖЕНИЕ С ГРАФИКОМ ===
+    st.title("📈 Математический предсказатель")
+    st.write("Загрузите историю котировок (CSV) для расчета математического тренда.")
+    
+    try:
+        # Читаем HTML файл, который должен лежать в той же папке
+        with open("predictor.html", "r", encoding="utf-8") as f:
+            html_data = f.read()
             
-            st.subheader("📰 Новости:")
-            for n in data['news']:
-                st.write(f"- {n}")
-                
-            st.divider()
-            st.subheader("💡 Скопируй в ИИ:")
-            
-            # Формируем красивую строку с новостями для промпта
-            news_str = "; ".join(data['news'])
-            prompt = f"Анализ {data['symbol']}. Цена: {data['price']:.4f}. RSI: {data['rsi']:.1f}. Тренд: {data['trend']}. Новости: {news_str}. Дай прогноз."
-            st.code(prompt, language="text")
-            
-        else:
-            st.error("Ошибка! Проверь тикер или интернет.")
+        # Встраиваем HTML в интерфейс Streamlit
+        components.html(html_data, height=850, scrolling=True)
+    except FileNotFoundError:
+        st.error("⚠️ Файл `predictor.html` не найден! Убедитесь, что вы загрузили его в ваш репозиторий на GitHub (в ту же папку, где лежит app.py).")
